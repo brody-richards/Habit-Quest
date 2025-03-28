@@ -1,63 +1,75 @@
 require('dotenv').config();
-
-// phase one 
 const express = require('express');
-const https = require('https');
-const fs = require('fs');
-const http = require('http');
-const hsts = require('hsts');
-const path = require('path');
-
-const app = express();
-const PORT_HTTP = 3000;
-const PORT_HTTPS = 3443;
-
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
-const port = process.env.PORT || 3000;
-
-// phase two
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
+const path = require('path');
+const hsts = require('hsts');
+const fs = require('fs');
+const https = require('https');
 
-const authRoutes = require('./routes/auth');
+const app = express();
+const PORT_HTTP = process.env.PORT || 3000;
+const PORT_HTTPS = 3443;
 
-const adminRoutes = require('./routes/admin');
+// Helmet for securing HTTP headers
+app.use(helmet({
+    xFrameOptions: { action: "deny" },
+    strictTransportSecurity: {
+        maxAge: 31556952, // 1 year
+        preload: true
+    }
+}));
 
-
-
-
-// use admin routes
-app.use('/api/admin', adminRoutes);
-
-// middleware phase One
-
-app.use(
-    helmet({
-        xFrameOptions: { action: "deny" },
-        strictTransportSecurity: {
-            maxAge: 31556952, // 1 year
-            preload: true
-        }
-    })
-);
-
-
-// middleware phase two
+// Middleware for parsing request bodies
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'default-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false } // Set to true in production
+}));
 
-// connect to mongoDB phase two
+// Initialize Passport and session
+app.use(passport.initialize());
+app.use(passport.session());
+
+// MongoDB connection
 mongoose.connect('mongodb://localhost:27017/userAuth', {
     useNewUrlParser: true,
     useUnifiedTopology: true
 }).then(() => console.log("MongoDB connected!"))
 .catch(err => console.log(err));
 
+// User database (in-memory for this example)
+const users = {};
 
-// import routs 
-app.use('/api/auth', authRoutes);
+// Passport configuration for Google OAuth
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "/auth/google/callback"
+}, (accessToken, refreshToken, profile, done) => {
+    const user = {
+        id: profile.id,
+        username: profile.displayName,
+        role: 'user' // Default role
+    };
+    users[profile.id] = user; // Store user in memory
+    return done(null, user);
+}));
 
+// Serialize and deserialize user
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser((id, done) => done(null, users[id]));
 
+// Static file serving
 app.use('/static', express.static('public', {
     setHeaders: (res, path) => {
         if (path.endsWith('.css')) {
@@ -68,51 +80,52 @@ app.use('/static', express.static('public', {
         }
     }
 }));
-/*
+
+// routes for google oauth
 app.get('/', (req, res) => {
-    res.set('Cache-Control', 'max-age=300, public'); // cache for 5 minutes
-    res.sendFile(path.join(__dirname,'/public/index.html'));
+    res.send('<h1>Welcome to the Secure App!</h1><a href="/auth/google">Login with Google</a>');
 });
 
-app.get('/secure', (req, res) => {
-    res.set('Cache-Control', 'no-store, no cache, private');
-    res.send('HTTPS Quest Tracker');
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile'] }));
+
+app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/' }),
+    (req, res) => {
+        res.redirect('/dashboard');
+    });
+
+app.get('/dashboard', (req, res) => {
+    if (req.isAuthenticated()) {
+        res.send(`Welcome ${req.user.username}! <a href="/logout">Logout</a>`);
+    } else {
+        res.redirect('/');
+    }
 });
 
-app.get('/habits', (req, res) => {
-    res.set('Cache-Control', 'max-age=60, public'); // cache for 1 minute
-    res.sendFile(path.join(__dirname,'public/habits.html'));
+app.get('/logout', (req, res, next) => {
+    req.logout(err => {
+        if (err) { return next(err); }
+        res.redirect('/');
+    });
 });
 
+// routes from phase one
 app.get('/goals', (req, res) => {
     res.set('Cache-Control', 'max-age=900, public'); // cache for 15 minutes
-    res.sendFile(path.join(__dirname,'public/goals.html'));
+    res.sendFile(path.join(__dirname, 'public/goals.html'));
 });
 
 app.get('/profile', (req, res) => {
     res.set('Cache-Control', 'max-age=3600, private'); // cache for 1 hour
-    res.sendFile(path.join(__dirname,'public/profile.html'));
+    res.sendFile(path.join(__dirname, 'public/profile.html'));
 });
 
-app.get('/posts', (req, res) => {
-    res.set('Cache-Control', 'max-age=300, public, stale-while-revalidate=86400'); // cache for 5 minutes
-    res.sendFile(path.join(__dirname,'public/posts.html'));
-});
-
-app.get('/posts/:id', (req, res) => {
-    res.set('Cache-Control', 'max-age=300, public'); // cache for 5 minutes
-    res.sendFile(path.join(__dirname,'public/posts.html'));
-});
-*/
+// HTTPS configuration
 const hstsOptions = {
-    maxAge: 31536000, 
-    includeSubDomains: true, 
-    preload: true 
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
 };
-
-http.createServer(app).listen(PORT_HTTP, () => {
-    console.log(`HTTP Server running at http://localhost:${PORT_HTTP}`);
-});
 
 const options = {
     key: fs.readFileSync('hidden/private-key.pem'),
@@ -125,8 +138,11 @@ const httpsServer = https.createServer(options, (req, res) => {
     });
 });
 
+// Start both HTTP and HTTPS servers
+app.listen(PORT_HTTP, () => {
+    console.log(`HTTP Server running at http://localhost:${PORT_HTTP}`);
+});
+
 httpsServer.listen(PORT_HTTPS, () => {
     console.log(`HTTPS Server running at https://localhost:${PORT_HTTPS}`);
 });
-
-console.log(`PORT_HTTP is set to: ${PORT_HTTP}`);
