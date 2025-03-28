@@ -23,6 +23,9 @@ const authRoutes = require('./routes/auth');
 
 const adminRoutes = require('./routes/admin');
 
+
+
+
 // use admin routes
 app.use('/api/admin', adminRoutes);
 
@@ -65,7 +68,7 @@ app.use('/static', express.static('public', {
         }
     }
 }));
-
+/*
 app.get('/', (req, res) => {
     res.set('Cache-Control', 'max-age=300, public'); // cache for 5 minutes
     res.sendFile(path.join(__dirname,'/public/index.html'));
@@ -100,7 +103,7 @@ app.get('/posts/:id', (req, res) => {
     res.set('Cache-Control', 'max-age=300, public'); // cache for 5 minutes
     res.sendFile(path.join(__dirname,'public/posts.html'));
 });
-
+*/
 const hstsOptions = {
     maxAge: 31536000, 
     includeSubDomains: true, 
