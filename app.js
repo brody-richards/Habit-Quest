@@ -24,9 +24,11 @@ app.use(helmet({
     }
 }));
 
+
 // Middleware for parsing request bodies
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
 
 // Session configuration
 app.use(session({
@@ -36,9 +38,11 @@ app.use(session({
     cookie: { secure: false } // Set to true in production
 }));
 
+
 // Initialize Passport and session
 app.use(passport.initialize());
 app.use(passport.session());
+
 
 // MongoDB connection
 mongoose.connect('mongodb://localhost:27017/userAuth', {
@@ -65,9 +69,11 @@ passport.use(new GoogleStrategy({
     return done(null, user);
 }));
 
+
 // Serialize and deserialize user
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => done(null, users[id]));
+
 
 // Static file serving
 app.use('/static', express.static('public', {
@@ -81,18 +87,22 @@ app.use('/static', express.static('public', {
     }
 }));
 
+
 // routes for google oauth
 app.get('/', (req, res) => {
     res.send('<h1>Welcome to the Secure App!</h1><a href="/auth/google">Login with Google</a>');
 });
 
+
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile'] }));
+
 
 app.get('/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/' }),
     (req, res) => {
         res.redirect('/dashboard');
     });
+
 
 app.get('/dashboard', (req, res) => {
     if (req.isAuthenticated()) {
@@ -102,12 +112,14 @@ app.get('/dashboard', (req, res) => {
     }
 });
 
+
 app.get('/logout', (req, res, next) => {
     req.logout(err => {
         if (err) { return next(err); }
         res.redirect('/');
     });
 });
+
 
 // routes from phase one
 app.get('/goals', (req, res) => {
@@ -119,6 +131,7 @@ app.get('/profile', (req, res) => {
     res.set('Cache-Control', 'max-age=3600, private'); // cache for 1 hour
     res.sendFile(path.join(__dirname, 'public/profile.html'));
 });
+
 
 // HTTPS configuration
 const hstsOptions = {
